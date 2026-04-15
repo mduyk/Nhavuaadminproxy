@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HỆ THỐNG QUẢN TRỊ DELTA - MASTER</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <style>
+        :root { --main: #00f2ff; --bg: #0a0b10; --card: #151921; --green: #00ff88; --red: #ff4d4d; }
+        body { background: var(--bg); color: #ccc; font-family: 'Segoe UI', sans-serif; margin: 0; }
+        
+        /* Menu Tabs */
+        .tabs { display: flex; background: #1c222d; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #333; }
+        .tab-btn { flex: 1; padding: 15px; border: none; background: none; color: #888; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .tab-btn.active { color: var(--main); border-bottom: 3px solid var(--main); background: rgba(0,242,255,0.05); }
+
+        .container { padding: 20px; display: none; max-width: 800px; margin: auto; }
+        .container.active { display: block; }
+
+        .box { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 20px; border: 1px solid #222; }
+        h3 { margin-top: 0; color: var(--main); border-left: 4px solid var(--main); padding-left: 10px; }
+
+        /* Table & List */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; border-bottom: 1px solid #222; text-align: left; }
+        .btn-ok { background: var(--green); color: #000; padding: 8px 12px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        .btn-del { background: none; color: var(--red); border: 1px solid var(--red); padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        
+        /* Form nạp key */
+        textarea { width: 100%; height: 100px; background: #000; color: var(--green); border: 1px solid #333; border-radius: 8px; padding: 10px; box-sizing: border-box; }
+        select { padding: 10px; background: #000; color: #fff; border: 1px solid #333; border-radius: 5px; width: 100%; margin-bottom: 10px; }
+        
+        .order-card { background: #000; border-radius: 10px; padding: 15px; margin-bottom: 10px; border-left: 5px solid #ffcc00; position: relative; }
+        .shop-badge { position: absolute; top: 10px; right: 10px; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="openTab(event, 'tab-orders')">DUYỆT NẠP</button>
+    <button class="tab-btn" onclick="openTab(event, 'tab-users')">USER & TÀI KHOẢN</button>
+    <button class="tab-btn" onclick="openTab(event, 'tab-keys')">KHO KEY</button>
+</div>
+
+<div id="tab-orders" class="container active">
+    <h3>LỆNH ĐANG CHỜ DUYỆT</h3>
+    <div id="list-requests">Đang tải yêu cầu...</div>
+</div>
+
+<div id="tab-users" class="container">
+    <h3>DANH SÁCH THÀNH VIÊN</h3>
+    <select id="select-shop-user" onchange="loadUsers()">
+        <option value="users_shop1">Xem Shop 1</option>
+        <option value="users_shop2">Xem Shop 2</option>
+    </select>
+    <div class="box">
+        <table>
+            <thead>
+                <tr><th>Tài khoản</th><th>Số dư</th><th>Hành động</th></tr>
+            </thead>
+            <tbody id="user-table-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<div id="tab-keys" class="container">
+    <div class="box">
+        <h3>THÊM KEY VÀO KHO</h3>
+        <label>Chọn loại Key:</label>
+        <select id="key-path">
+            <optgroup label="SHOP 1">
+                <option value="shop1/ngay">Shop 1 - Gói Ngày</option>
+                <option value="shop1/tuan">Shop 1 - Gói Tuần</option>
+                <option value="shop1/thang">Shop 1 - Gói Tháng</option>
+            </optgroup>
+            <optgroup label="SHOP 2">
+                <option value="shop2/tuan">Shop 2 - Gói Tuần</option>
+                <option value="shop2/thang">Shop 2 - Gói Tháng</option>
+            </optgroup>
+        </select>
+        <textarea id="key-input" placeholder="Dán danh sách key vào đây, mỗi key 1 dòng..."></textarea>
+        <button class="btn-ok" style="width:100%; margin-top:10px;" onclick="addKeys()">XÁC NHẬN THÊM KEY</button>
+    </div>
+
+    <div class="box">
+        <h3>KEY HIỆN CÓ TRONG KHO</h3>
+        <div id="current-keys-list" style="max-height: 200px; overflow-y: auto; font-size: 12px;"></div>
+    </div>
+</div>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyBk6R1TDZeAxh37JQLgL_6Wl0v8m8Sg0",
+        authDomain: "shopctv-61f96.firebaseapp.com",
+        databaseURL: "https://shopctv-61f96-default-rtdb.asia-southeast1.firebasedatabase.app/",
+        projectId: "shopctv-61f96",
+        appId: "1:610663182342:web:83e255ec7921609395f190"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    function openTab(evt, tabName) {
+        var i, container, tablinks;
+        container = document.getElementsByClassName("container");
+        for (i = 0; i < container.length; i++) container[i].style.display = "none";
+        tablinks = document.getElementsByClassName("tab-btn");
+        for (i = 0; i < tablinks.length; i++) tablinks[i].className = tablinks[i].className.replace(" active", "");
+        document.getElementById(tabName).style.display = "block";
+        evt.currentTarget.className += " active";
+        if(tabName === 'tab-users') loadUsers();
+        if(tabName === 'tab-keys') loadInventory();
+    }
+
+    // --- LOGIC DUYỆT NẠP ---
+    db.ref('bank_requests').on('value', s => {
+        const div = document.getElementById('list-requests'); div.innerHTML = "";
+        const data = s.val();
+        if(!data) return div.innerHTML = "<p>Không có lệnh nào đang chờ.</p>";
+        Object.keys(data).forEach(id => {
+            const r = data[id];
+            const badgeColor = r.shop === 'users_shop1' ? '#00f2ff' : '#ff00ff';
+            div.innerHTML += `
+                <div class="order-card">
+                    <span class="shop-badge" style="border:1px solid ${badgeColor}; color:${badgeColor}">${r.shop.toUpperCase()}</span>
+                    <b>${r.user.toUpperCase()}</b> nạp <span style="color:var(--green)">${Number(r.amount).toLocaleString()}đ</span><br>
+                    <small>Lúc: ${r.time}</small>
+                    <div style="margin-top:10px; display:flex; gap:10px;">
+                        <button class="btn-ok" style="flex:2" onclick="processOrder('${id}','${r.shop}','${r.user}',${r.amount},'Success')">DUYỆT</button>
+                        <button class="btn-del" style="flex:1" onclick="processOrder('${id}','${r.shop}','${r.user}',0,'Fail')">HỦY</button>
+                    </div>
+                </div>`;
+        });
+    });
+
+    function processOrder(id, shop, user, amt, status) {
+        if(status === 'Success') {
+            db.ref(shop+'/'+user+'/balance').once('value', s => {
+                db.ref(shop+'/'+user+'/balance').set((s.val()||0) + amt);
+                db.ref('history_pay/'+user+'/'+id+'/status').set('Success');
+                db.ref('bank_requests/'+id).remove();
+            });
+        } else {
+            if(confirm("Từ chối đơn này?")) {
+                db.ref('history_pay/'+user+'/'+id+'/status').set('Fail');
+                db.ref('bank_requests/'+id).remove();
+            }
+        }
+    }
+
+    // --- LOGIC QUẢN LÝ USER ---
+    function loadUsers() {
+        const shop = document.getElementById('select-shop-user').value;
+        db.ref(shop).on('value', s => {
+            const tbody = document.getElementById('user-table-body'); tbody.innerHTML = "";
+            const data = s.val();
+            if(!data) return;
+            Object.keys(data).forEach(u => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${u}</td>
+                        <td style="color:var(--gold)">${(data[u].balance||0).toLocaleString()}đ</td>
+                        <td><button class="btn-del" onclick="deleteUser('${shop}','${u}')">XÓA TÀI KHOẢN</button></td>
+                    </tr>`;
+            });
+        });
+    }
+
+    function deleteUser(path, user) {
+        if(confirm("CẢNH BÁO: Xóa vĩnh viễn tài khoản " + user + "?")) {
+            db.ref(path + '/' + user).remove();
+        }
+    }
+
+    // --- LOGIC KHO KEY ---
+    function addKeys() {
+        const path = document.getElementById('key-path').value;
+        const rawKeys = document.getElementById('key-input').value.trim();
+        if(!rawKeys) return alert("Dán key vào đã!");
+        const arr = rawKeys.split('\n');
+        arr.forEach(k => {
+            if(k.trim()) db.ref('keys/'+path).push(k.trim());
+        });
+        document.getElementById('key-input').value = "";
+        alert("Đã thêm " + arr.length + " key!");
+    }
+
+    function loadInventory() {
+        db.ref('keys').on('value', s => {
+            const div = document.getElementById('current-keys-list'); div.innerHTML = "";
+            const data = s.val();
+            if(!data) return div.innerHTML = "Kho đang trống.";
+            // Duyệt qua các shop và các gói
+            Object.keys(data).forEach(shop => {
+                Object.keys(data[shop]).forEach(goi => {
+                    const count = Object.keys(data[shop][goi]).length;
+                    div.innerHTML += `<div style="margin-bottom:5px;">• ${shop.toUpperCase()} - ${goi}: <b>${count} key</b></div>`;
+                });
+            });
+        });
+    }
+</script>
+</body>
+</html>
